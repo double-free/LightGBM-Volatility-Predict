@@ -31,7 +31,7 @@ def train(train_features, train_y_true, k):
             params={},
             train_set=train_dataset,
             valid_sets=[train_dataset, validation_dataset],
-            early_stopping_rounds=50,
+            early_stopping_rounds=100,
             feval=feval_rmspe,
             verbose_eval=20,
             num_boost_round=1000,

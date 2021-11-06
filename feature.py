@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import multiprocessing as mp
 
 
 def calculate_realized_volatility(price):
@@ -59,6 +60,9 @@ def get_book(stock_id):
     book["bid_imbalance"] = book.bid_size1 / book.bid_size2
     book["ask_imbalance"] = book.ask_size1 / book.ask_size2
 
+    # book flip (cross spread to take orders, extremely aggressive behavior)
+    book["flip"] = book.ask_price1.shift(-1) <= book.bid_price1
+
     return book
 
 
@@ -77,6 +81,7 @@ def get_book_features(book, window):
         "ask_size1": ["mean", "std", "max", "sum"],
         "bid_imbalance": ["mean", "std", "max"],
         "ask_imbalance": ["mean", "std", "max"],
+        "flip": ["sum"],
     }
 
     return get_features(book, feature_dict)
@@ -103,12 +108,49 @@ def get_trade_features(trade, window):
     return get_features(trade, feature_dict)
 
 
-# use this to get book & trade features
-def get_all_features(stock_id, window):
+def get_one_stock_features(stock_id, window):
     book = get_book(stock_id)
     book_features = get_book_features(book, window)
     trade = get_trade(stock_id)
     trade_features = get_trade_features(trade, window)
-
     merged = pd.merge(book_features, trade_features, on=["time_id_"])
+    merged.insert(loc=0, column="stock_id", value=stock_id)
     return merged
+
+
+# use this to get book & trade features
+def get_stock_features(stock_ids, window):
+    with mp.Pool(4) as p:
+        results = p.starmap(
+            get_one_stock_features, zip(stock_ids, [window] * len(stock_ids))
+        )
+        return pd.concat(results).reset_index(drop=True)
+
+
+def get_correlation(y_path):
+    return (
+        pd.read_csv(y_path)
+        .pivot(index="time_id", columns="stock_id", values="target")
+        .corr()
+    )
+
+
+def get_similar_stock_features(train_data, corr, n, selected_features):
+    selected_features = set(selected_features)
+    df = []
+    for stock_id in train_data.stock_id.unique():
+        # remove itself
+        top_n_stocks = corr[[stock_id]].nlargest(n + 1, stock_id).index[1:]
+        similar_stock_features = (
+            train_data[train_data.stock_id.isin(top_n_stocks)]
+            .groupby("time_id_")
+            .mean()
+            .reindex(selected_features, axis=1)
+        )
+        df.append(similar_stock_features)
+
+    return (
+        pd.concat(df)
+        .rename({col: f"{col}_similar" for col in selected_features}, axis=1)
+        .reset_index(drop=True)
+    )
