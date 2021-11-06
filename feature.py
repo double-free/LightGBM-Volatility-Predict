@@ -1,6 +1,27 @@
 import pandas as pd
 import numpy as np
 import multiprocessing as mp
+import glob
+
+
+def get_all_stock_ids(train_dir):
+    paths = glob.glob(f"{train_dir}/*")
+    return sorted([int(path.split("=")[1]) for path in paths])
+
+
+def get_cache_name(stock_ids, window):
+    # encode stock list
+    # every bit represent if a stock is picked or not
+    # two 64bit integers shall be enough
+    high = 0
+    low = 0
+    for stock_id in stock_ids:
+        if stock_id < 64:
+            low += 1 << stock_id
+        else:
+            high += 1 << (stock_id - 64)
+    cache = f"./data/mine/{window}/{hex(high)}_{hex(low)}.csv"
+    return cache
 
 
 def calculate_realized_volatility(price):
@@ -113,7 +134,8 @@ def get_one_stock_features(stock_id, window):
     book_features = get_book_features(book, window)
     trade = get_trade(stock_id)
     trade_features = get_trade_features(trade, window)
-    merged = pd.merge(book_features, trade_features, on=["time_id_"])
+    # left join to handle "no trade" cases for low liquidity stocks
+    merged = pd.merge(book_features, trade_features, on=["time_id_"], how="left")
     merged.insert(loc=0, column="stock_id", value=stock_id)
     return merged
 
