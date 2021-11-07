@@ -9,7 +9,7 @@ def get_all_stock_ids(train_dir):
     return sorted([int(path.split("=")[1]) for path in paths])
 
 
-def get_cache_name(stock_ids, window):
+def get_cache_file_name(stock_ids, window):
     # encode stock list
     # every bit represent if a stock is picked or not
     # two 64bit integers shall be enough
@@ -135,6 +135,7 @@ def get_one_stock_features(stock_id, window):
     trade = get_trade(stock_id)
     trade_features = get_trade_features(trade, window)
     # left join to handle "no trade" cases for low liquidity stocks
+    # it is safe because book update must >= trade update
     merged = pd.merge(book_features, trade_features, on=["time_id_"], how="left")
     merged.insert(loc=0, column="stock_id", value=stock_id)
     return merged
@@ -150,11 +151,12 @@ def get_stock_features(stock_ids, window):
 
 
 def get_correlation(y_path):
-    return (
-        pd.read_csv(y_path)
-        .pivot(index="time_id", columns="stock_id", values="target")
-        .corr()
+    vol_true = pd.read_csv(y_path).pivot(
+        index="time_id", columns="stock_id", values="target"
     )
+    # correlation is based on the "change rate" of volatility
+    # instead of the raw volatility, I think it is comparable between stocks
+    return (vol_true / vol_true.shift(1)).corr()
 
 
 def get_similar_stock_features(train_data, corr, n, selected_features):
@@ -169,10 +171,11 @@ def get_similar_stock_features(train_data, corr, n, selected_features):
             .mean()
             .reindex(selected_features, axis=1)
         )
+        similar_stock_features["stock_id"] = stock_id
         df.append(similar_stock_features)
 
     return (
         pd.concat(df)
         .rename({col: f"{col}_similar" for col in selected_features}, axis=1)
-        .reset_index(drop=True)
+        .reset_index()
     )
