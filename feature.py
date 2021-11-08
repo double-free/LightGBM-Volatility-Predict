@@ -89,20 +89,20 @@ def get_book(stock_id):
 
 def get_book_features(book, window):
     book["batch_id"] = cut_by_time(book, window)
-
     feature_dict = {
-        "vwap11": ["mean", "std", "max", calculate_realized_volatility],
-        "vwap12": ["mean", "std", "max", calculate_realized_volatility],
-        "vwap21": ["mean", "std", "max", calculate_realized_volatility],
-        "vwap22": ["mean", "std", "max", calculate_realized_volatility],
-        "bid_gap": ["mean", "std", "max"],
-        "ask_gap": ["mean", "std", "max"],
-        "bid_ask_spread": ["mean", "std", "max"],
-        "bid_size1": ["mean", "std", "max", "sum"],
-        "ask_size1": ["mean", "std", "max", "sum"],
-        "bid_imbalance": ["mean", "std", "max"],
-        "ask_imbalance": ["mean", "std", "max"],
+        "vwap11": ["mean", "std", calculate_realized_volatility],
+        "vwap12": ["mean", "std", calculate_realized_volatility],
+        "vwap21": ["mean", "std", calculate_realized_volatility],
+        "vwap22": ["mean", "std", calculate_realized_volatility],
+        "bid_gap": ["mean", "std"],
+        "ask_gap": ["mean", "std"],
+        "bid_ask_spread": ["mean", "std"],
+        "bid_size1": ["mean", "std", "sum"],
+        "ask_size1": ["mean", "std", "sum"],
+        "bid_imbalance": ["mean", "std"],
+        "ask_imbalance": ["mean", "std"],
         "flip": ["sum"],
+        "seconds_in_bucket": "count",
     }
 
     return get_features(book, feature_dict)
@@ -115,15 +115,47 @@ def get_trade(stock_id):
     trade["trade_amount"] = trade.price * trade.trade_volume
     trade["per_trade_quantity"] = trade.trade_volume / trade.order_count
 
-    return trade
+    # a complex feature, trade_volume/(ask_size + bid_size)
+    # this may give insight on how much percentage of ToB is taken
+    raw_book = pd.read_parquet(f"data/book_train.parquet/stock_id={stock_id}")
+    raw_book["time_seconds"] = (
+        raw_book.time_id.astype(int) * 600 + raw_book.seconds_in_bucket
+    )
+    trade["time_seconds"] = trade.time_id.astype(int) * 600 + trade.seconds_in_bucket
+    merged = pd.merge_asof(
+        trade,
+        raw_book[
+            [
+                "time_id",
+                "time_seconds",
+                "bid_size1",
+                "ask_size1",
+                "bid_size2",
+                "ask_size2",
+            ]
+        ],
+        by="time_id",
+        on="time_seconds",
+    )
+    merged["trade_ratio_lv1"] = merged.trade_volume / (
+        merged.bid_size1 + merged.ask_size1
+    )
+    merged["trade_ratio_lv12"] = merged.trade_volume / (
+        merged.bid_size1 + merged.ask_size1 + merged.bid_size2 + merged.ask_size2
+    )
+    return merged
 
 
 def get_trade_features(trade, window):
     trade["batch_id"] = cut_by_time(trade, window)
     feature_dict = {
-        "trade_volume": ["mean", "std", "max", "sum"],
-        "trade_amount": ["mean", "std", "max"],
-        "per_trade_quantity": ["mean", "std", "max"],
+        "trade_volume": ["mean", "std", "sum"],
+        "order_count": ["mean", "std", "sum"],
+        "trade_amount": ["mean", "std"],
+        "per_trade_quantity": ["mean", "std"],
+        "trade_ratio_lv1": ["mean", "std"],
+        "trade_ratio_lv12": ["mean", "std"],
+        "seconds_in_bucket": "count",
     }
 
     return get_features(trade, feature_dict)
@@ -136,7 +168,13 @@ def get_one_stock_features(stock_id, window):
     trade_features = get_trade_features(trade, window)
     # left join to handle "no trade" cases for low liquidity stocks
     # it is safe because book update must >= trade update
-    merged = pd.merge(book_features, trade_features, on=["time_id_"], how="left")
+    merged = pd.merge(
+        book_features,
+        trade_features,
+        on=["time_id_"],
+        how="left",
+        suffixes=["_book", "_trade"],
+    )
     merged.insert(loc=0, column="stock_id", value=stock_id)
     return merged
 
