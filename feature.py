@@ -48,7 +48,7 @@ def get_features(df, feature_dict):
     # now each time id has several rows of features for different time window
     # use pandas.pivot to flat these rows
     flat_features = features.pivot(index="time_id_", columns="batch_id_")
-    flat_features.columns = [f"{col[0]}_{col[1]}" for col in flat_features.columns]
+    flat_features.columns = [f"{col[0]}_batch{col[1]}" for col in flat_features.columns]
     return flat_features.reset_index()
 
 
@@ -80,6 +80,9 @@ def get_book(stock_id):
 
     book["bid_imbalance"] = book.bid_size1 / book.bid_size2
     book["ask_imbalance"] = book.ask_size1 / book.ask_size2
+    book["bid_ask_imbalance"] = (book.bid_size1 + book.bid_size2) / (
+        book.ask_size1 + book.ask_size2
+    )
 
     # book flip (cross spread to take orders, extremely aggressive behavior)
     book["flip"] = book.ask_price1.shift(-1) <= book.bid_price1
@@ -99,8 +102,15 @@ def get_book_features(book, window):
         "bid_ask_spread": ["mean", "std"],
         "bid_size1": ["mean", "std", "sum"],
         "ask_size1": ["mean", "std", "sum"],
-        "bid_imbalance": ["mean", "std"],
-        "ask_imbalance": ["mean", "std"],
+        "bid_imbalance": [
+            "mean",
+            "std",
+        ],
+        "ask_imbalance": [
+            "mean",
+            "std",
+        ],
+        "bid_ask_imbalance": ["mean", "std"],
         "flip": ["sum"],
         "seconds_in_bucket": "count",
     }
@@ -217,3 +227,24 @@ def get_similar_stock_features(train_data, corr, n, selected_features):
         .rename({col: f"{col}_similar" for col in selected_features}, axis=1)
         .reset_index()
     )
+
+
+def get_stock_group_features(train_features, corr, selected_features):
+    copied_corr = corr.copy()
+    from sklearn.cluster import KMeans
+
+    # clustering = DBSCAN(eps=0.4, min_samples=2).fit(corr.values)
+    clustering = KMeans(n_clusters=5, random_state=0).fit(copied_corr)
+    copied_corr["group_id"] = clustering.labels_
+    merged = train_features.merge(copied_corr[["group_id"]], on="stock_id")
+    group_features = (
+        merged.groupby(["time_id_", "group_id"])
+        .mean()
+        .reindex(selected_features, axis=1)
+        .reset_index()
+        .pivot(index="time_id_", columns="group_id")
+    )
+    group_features.columns = [
+        f"{col[0]}_group{col[1]}" for col in group_features.columns
+    ]
+    return group_features.reset_index()
