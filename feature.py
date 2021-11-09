@@ -75,13 +75,10 @@ def get_book(stock_id):
     book["vwap22"] = vwap(book, 2, 2)
 
     book["bid_ask_spread"] = book.ask_price1 - book.bid_price1
-    book["bid_gap"] = book.bid_price1 - book.bid_price2
-    book["ask_gap"] = book.ask_price2 - book.ask_price1
 
-    book["bid_imbalance"] = book.bid_size1 / book.bid_size2
-    book["ask_imbalance"] = book.ask_size1 / book.ask_size2
-    book["bid_ask_imbalance"] = (book.bid_size1 + book.bid_size2) / (
-        book.ask_size1 + book.ask_size2
+    book["total_volume_lv1"] = book.ask_size1 + book.bid_size1
+    book["total_volume_lv12"] = (
+        book.ask_size1 + book.bid_size1 + book.ask_size2 + book.bid_size2
     )
 
     # book flip (cross spread to take orders, extremely aggressive behavior)
@@ -97,20 +94,9 @@ def get_book_features(book, window):
         "vwap12": ["mean", "std", calculate_realized_volatility],
         "vwap21": ["mean", "std", calculate_realized_volatility],
         "vwap22": ["mean", "std", calculate_realized_volatility],
-        "bid_gap": ["mean", "std"],
-        "ask_gap": ["mean", "std"],
         "bid_ask_spread": ["mean", "std"],
-        "bid_size1": ["mean", "std", "sum"],
-        "ask_size1": ["mean", "std", "sum"],
-        "bid_imbalance": [
-            "mean",
-            "std",
-        ],
-        "ask_imbalance": [
-            "mean",
-            "std",
-        ],
-        "bid_ask_imbalance": ["mean", "std"],
+        "total_volume_lv1": ["mean", "std", "sum"],
+        "total_volume_lv12": ["mean", "std", "sum"],
         "flip": ["sum"],
         "seconds_in_bucket": "count",
     }
@@ -122,7 +108,6 @@ def get_trade(stock_id):
     trade = pd.read_parquet(f"data/trade_train.parquet/stock_id={stock_id}").rename(
         {"size": "trade_volume"}, axis=1
     )
-    trade["trade_amount"] = trade.price * trade.trade_volume
     trade["per_trade_quantity"] = trade.trade_volume / trade.order_count
 
     # a complex feature, trade_volume/(ask_size + bid_size)
@@ -161,7 +146,6 @@ def get_trade_features(trade, window):
     feature_dict = {
         "trade_volume": ["mean", "std", "sum"],
         "order_count": ["mean", "std", "sum"],
-        "trade_amount": ["mean", "std"],
         "per_trade_quantity": ["mean", "std"],
         "trade_ratio_lv1": ["mean", "std"],
         "trade_ratio_lv12": ["mean", "std"],
