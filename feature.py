@@ -60,11 +60,9 @@ def vwap(row, bid_idx, ask_idx):
     ) / (row[f"ask_size{ask_idx}"] + row[f"bid_size{bid_idx}"])
 
 
-def get_book(stock_id):
-    book = pd.read_parquet(f"data/book_train.parquet/stock_id={stock_id}")
-
+def get_book_features(raw_book, window):
     # VWAPs
-
+    book = raw_book.copy()
     # level 0 price does not change
     book["vwap11"] = vwap(book, 1, 1)
     # ask level 0 is fully traded
@@ -84,10 +82,6 @@ def get_book(stock_id):
     # book flip (cross spread to take orders, extremely aggressive behavior)
     book["flip"] = book.ask_price1.shift(-1) <= book.bid_price1
 
-    return book
-
-
-def get_book_features(book, window):
     book["batch_id"] = cut_by_time(book, window)
     feature_dict = {
         "vwap11": ["mean", "std", calculate_realized_volatility],
@@ -104,15 +98,12 @@ def get_book_features(book, window):
     return get_features(book, feature_dict)
 
 
-def get_trade(stock_id):
-    trade = pd.read_parquet(f"data/trade_train.parquet/stock_id={stock_id}").rename(
-        {"size": "trade_volume"}, axis=1
-    )
+def get_trade_features(raw_trade, raw_book, window):
+    trade = raw_trade.rename({"size": "trade_volume"}, axis=1).copy()
     trade["per_trade_quantity"] = trade.trade_volume / trade.order_count
 
     # a complex feature, trade_volume/(ask_size + bid_size)
     # this may give insight on how much percentage of ToB is taken
-    raw_book = pd.read_parquet(f"data/book_train.parquet/stock_id={stock_id}")
     raw_book["time_seconds"] = (
         raw_book.time_id.astype(int) * 600 + raw_book.seconds_in_bucket
     )
@@ -138,10 +129,7 @@ def get_trade(stock_id):
     merged["trade_ratio_lv12"] = merged.trade_volume / (
         merged.bid_size1 + merged.ask_size1 + merged.bid_size2 + merged.ask_size2
     )
-    return merged
 
-
-def get_trade_features(trade, window):
     trade["batch_id"] = cut_by_time(trade, window)
     feature_dict = {
         "trade_volume": ["mean", "std", "sum"],
@@ -155,11 +143,14 @@ def get_trade_features(trade, window):
     return get_features(trade, feature_dict)
 
 
-def get_one_stock_features(stock_id, window):
-    book = get_book(stock_id)
-    book_features = get_book_features(book, window)
-    trade = get_trade(stock_id)
-    trade_features = get_trade_features(trade, window)
+# mode = "train" or "test"
+def get_one_stock_features(stock_id, window, mode):
+    book_path = f"./data/book_{mode}.parquet/stock_id={stock_id}"
+    raw_book = pd.read_parquet(book_path)
+    book_features = get_book_features(raw_book, window)
+    trade_path = f"./data/book_{mode}.parquet/stock_id={stock_id}"
+    raw_trade = pd.read_parquet(trade_path)
+    trade_features = get_trade_features(raw_trade, raw_book, window)
     # left join to handle "no trade" cases for low liquidity stocks
     # it is safe because book update must >= trade update
     merged = pd.merge(
@@ -174,10 +165,11 @@ def get_one_stock_features(stock_id, window):
 
 
 # use this to get book & trade features
-def get_stock_features(stock_ids, window):
+def get_stock_features(stock_ids, window, mode):
     with mp.Pool(4) as p:
         results = p.starmap(
-            get_one_stock_features, zip(stock_ids, [window] * len(stock_ids))
+            get_one_stock_features,
+            zip(stock_ids, [window] * len(stock_ids), [mode] * len(stock_ids)),
         )
         return pd.concat(results).reset_index(drop=True)
 
