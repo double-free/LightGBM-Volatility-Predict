@@ -130,7 +130,7 @@ def get_trade_features(raw_trade, raw_book, window):
         merged.bid_size1 + merged.ask_size1 + merged.bid_size2 + merged.ask_size2
     )
 
-    trade["batch_id"] = cut_by_time(trade, window)
+    merged["batch_id"] = cut_by_time(merged, window)
     feature_dict = {
         "trade_volume": ["mean", "std", "sum"],
         "order_count": ["mean", "std", "sum"],
@@ -140,7 +140,7 @@ def get_trade_features(raw_trade, raw_book, window):
         "seconds_in_bucket": "count",
     }
 
-    return get_features(trade, feature_dict)
+    return get_features(merged, feature_dict)
 
 
 # mode = "train" or "test"
@@ -148,7 +148,7 @@ def get_one_stock_features(stock_id, window, mode):
     book_path = f"./data/book_{mode}.parquet/stock_id={stock_id}"
     raw_book = pd.read_parquet(book_path)
     book_features = get_book_features(raw_book, window)
-    trade_path = f"./data/book_{mode}.parquet/stock_id={stock_id}"
+    trade_path = f"./data/trade_{mode}.parquet/stock_id={stock_id}"
     raw_trade = pd.read_parquet(trade_path)
     trade_features = get_trade_features(raw_trade, raw_book, window)
     # left join to handle "no trade" cases for low liquidity stocks
