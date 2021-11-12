@@ -30,10 +30,8 @@ def calculate_realized_volatility(price):
 
 
 def cut_by_time(df, window_seconds):
-    batch_id = df.groupby("time_id", group_keys=False).apply(
-        lambda g: (g.seconds_in_bucket / window_seconds).astype(int)
-    )
-    return batch_id
+    batch_id = (df.seconds_in_bucket / window_seconds).astype(int)
+    return pd.Series(batch_id, name="batch_id", index=df.index)
 
 
 def get_features(df, feature_dict):

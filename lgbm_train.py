@@ -1,6 +1,7 @@
 from sklearn.model_selection import KFold
 import lightgbm
 import numpy as np
+import pandas as pd
 
 # root mean squared percentage error
 def rmspe(y_true, y_pred):
