@@ -82,10 +82,11 @@ def get_book_features(raw_book, window):
 
     book["batch_id"] = cut_by_time(book, window)
     feature_dict = {
-        "vwap11": ["mean", "std", calculate_realized_volatility],
-        "vwap12": ["mean", "std", calculate_realized_volatility],
-        "vwap21": ["mean", "std", calculate_realized_volatility],
-        "vwap22": ["mean", "std", calculate_realized_volatility],
+        # the mean, std of vwap is useless according to feature importance
+        "vwap11": [calculate_realized_volatility],
+        "vwap12": [calculate_realized_volatility],
+        "vwap21": [calculate_realized_volatility],
+        "vwap22": [calculate_realized_volatility],
         "bid_ask_spread": ["mean", "std"],
         "total_volume_lv1": ["mean", "std", "sum"],
         "total_volume_lv12": ["mean", "std", "sum"],
@@ -93,7 +94,20 @@ def get_book_features(raw_book, window):
         "seconds_in_bucket": "count",
     }
 
-    return get_features(book, feature_dict)
+    book_features = get_features(book, feature_dict)
+
+    # last book state
+    last_state = raw_book.drop_duplicates(["time_id"], keep="last").reset_index(
+        drop=True
+    )
+    book_features["last_total_volume_lv1"] = last_state.bid_size1 + last_state.ask_size1
+    book_features["last_total_volume_lv12"] = (
+        book_features.last_total_volume_lv1
+        + last_state.bid_size2
+        + last_state.ask_size2
+    )
+    book_features["last_bid_ask_spread"] = last_state.ask_price1 - last_state.bid_price1
+    return book_features
 
 
 def get_trade_features(raw_trade, raw_book, window):
