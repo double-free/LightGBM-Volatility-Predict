@@ -24,7 +24,7 @@ def get_cache_file_name(stock_ids, window):
     return cache
 
 
-def calculate_realized_volatility(price):
+def realized_volatility(price):
     log_return = np.log(price).diff().dropna()
     return np.sqrt(np.sum(log_return ** 2))
 
@@ -83,10 +83,10 @@ def get_book_features(raw_book, window):
     book["batch_id"] = cut_by_time(book, window)
     feature_dict = {
         # the mean, std of vwap is useless according to feature importance
-        "vwap11": [calculate_realized_volatility],
-        "vwap12": [calculate_realized_volatility],
-        "vwap21": [calculate_realized_volatility],
-        "vwap22": [calculate_realized_volatility],
+        "vwap11": [realized_volatility],
+        "vwap12": [realized_volatility],
+        "vwap21": [realized_volatility],
+        "vwap22": [realized_volatility],
         "bid_ask_spread": ["mean", "std"],
         "total_volume_lv1": ["mean", "std", "sum"],
         "total_volume_lv12": ["mean", "std", "sum"],
